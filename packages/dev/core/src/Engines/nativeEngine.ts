@@ -1448,7 +1448,7 @@ export class NativeEngine extends Engine {
         if (!!texture && !!texture._hardwareTexture) {
             const source = canvas.getCanvasTexture();
             const destination = texture._hardwareTexture.underlyingResource;
-            this._engine.copyTexture(destination, source);
+            this._engine.copyTexture(destination, source, invertY);
             texture.isReady = true;
         }
     }
