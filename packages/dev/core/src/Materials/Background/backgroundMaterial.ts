@@ -986,7 +986,7 @@ export class BackgroundMaterial extends PushMaterial {
         this._primaryColor.copyFrom(this.__perceptualColor);
 
         // Revert gamma space.
-        this._primaryColor.toLinearSpaceToRef(this._primaryColor);
+        this._primaryColor.toLinearSpaceToRef(this._primaryColor, this.getScene().getEngine().useExactSrgbConversions);
 
         // Revert image processing configuration.
         if (this._imageProcessingConfiguration) {
@@ -1057,7 +1057,7 @@ export class BackgroundMaterial extends PushMaterial {
      * @param world The world matrix to bind.
      */
     public bindOnlyWorldMatrix(world: Matrix): void {
-        this._activeEffect.setMatrix("world", world);
+        this._activeEffect!.setMatrix("world", world);
     }
 
     /**

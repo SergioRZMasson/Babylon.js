@@ -202,6 +202,12 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      */
     public static OnEventObservable = new Observable<Material>();
 
+    static {
+        EngineStore.OnEnginesDisposedObservable.addOnce(() => {
+            Material.OnEventObservable.clear();
+        });
+    }
+
     /**
      * Custom callback helping to override the default shader used in the material.
      */
@@ -253,6 +259,9 @@ export class Material implements IAnimatable, IClipPlanesHolder {
      */
     @serialize()
     public metadata: any = null;
+
+    /** @internal */
+    public _internalMetadata: any;
 
     /**
      * For internal use only. Please do not use.
@@ -944,6 +953,11 @@ export class Material implements IAnimatable, IClipPlanesHolder {
         return "Material";
     }
 
+    /** @internal */
+    public get _isMaterial() {
+        return true;
+    }
+
     /**
      * Specifies if updates for the material been locked
      */
@@ -1122,8 +1136,9 @@ export class Material implements IAnimatable, IClipPlanesHolder {
 
     /**
      * Marks the material to indicate that it needs to be re-calculated
+     * @param forceMaterialDirty - Forces the material to be marked as dirty for all components (same as this.markAsDirty(Material.AllDirtyFlag)). You should use this flag if the material is frozen and you want to force a recompilation.
      */
-    public markDirty(): void {
+    public markDirty(forceMaterialDirty = false): void {
         const meshes = this.getScene().meshes;
         for (const mesh of meshes) {
             if (!mesh.subMeshes) {
@@ -1140,7 +1155,12 @@ export class Material implements IAnimatable, IClipPlanesHolder {
 
                 subMesh.effect._wasPreviouslyReady = false;
                 subMesh.effect._wasPreviouslyUsingInstances = null;
+                subMesh.effect._forceRebindOnNextCall = forceMaterialDirty;
             }
+        }
+
+        if (forceMaterialDirty) {
+            this.markAsDirty(Material.AllDirtyFlag);
         }
     }
 
@@ -1203,6 +1223,7 @@ export class Material implements IAnimatable, IClipPlanesHolder {
 
         this._eventInfo.subMesh = subMesh;
         this._callbackPluginEventBindForSubMesh(this._eventInfo);
+        effect._forceRebindOnNextCall = false;
     }
 
     /**
@@ -1769,6 +1790,10 @@ export class Material implements IAnimatable, IClipPlanesHolder {
 
         if (this._onEffectCreatedObservable) {
             this._onEffectCreatedObservable.clear();
+        }
+
+        if (this._eventInfo) {
+            this._eventInfo = {} as any;
         }
     }
 

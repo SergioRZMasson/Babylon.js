@@ -84,6 +84,8 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
     private _pointerTravelDistance = 0;
     private _processSelectionOnUp = false;
     private _visibleRegionContainer: Container;
+    private _centerZoomMousePosition: Vector2 = new Vector2(0, 0);
+    private _hasPerformedDragZoom: boolean = false;
 
     private static _addedFonts: string[] = [];
     public static get addedFonts() {
@@ -286,6 +288,7 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
             this._setConstraintDirection = false;
             this._constraintDirection = ConstraintDirection.NONE;
         }
+        this.props.globalState.shiftKeyPressed = evt.shiftKey && evt.type === "keydown";
 
         if (evt.key === "Delete" || evt.key === "Backspace") {
             if (!this.props.globalState.lockObject.lock) {
@@ -603,9 +606,11 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
                 }
             });
             liveRoot.clearControls();
+            const originalToCloneMap = new Map<Control, Control>();
             const updatedRootChildren = this.trueRootContainer.children.slice(0);
             for (const child of updatedRootChildren) {
                 const clone = child.clone(this.props.globalState.liveGuiTexture!);
+                originalToCloneMap.set(child, clone);
                 liveRoot.addControl(clone);
             }
 
@@ -618,6 +623,8 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
                     }
                 }
             });
+
+            this._syncConnectedLines(updatedRootChildren, originalToCloneMap);
         }
     }
 
@@ -805,12 +812,12 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
         if (this.props.globalState.tool === GUIEditorTool.SELECT) {
             this._mouseStartPoint = this.getScaledPointerPosition();
         }
+        if (this.props.globalState.tool === GUIEditorTool.ZOOM) {
+            this._centerZoomMousePosition.set(this._scene.pointerX, this._scene.pointerY);
+        }
         if (evt.buttons & 4 || this.props.globalState.tool === GUIEditorTool.PAN) {
             this.startPanning();
         } else {
-            if (this.props.globalState.tool === GUIEditorTool.ZOOM) {
-                this.zooming(1.0 + (this.props.globalState.keys.isKeyDown("alt") ? -this._zoomModeIncrement : this._zoomModeIncrement));
-            }
             this.endPanning();
             // process selection
             if (this.props.globalState.selectedControls.length !== 0) {
@@ -828,7 +835,13 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
     }
 
     onUp(evt: React.PointerEvent) {
+        if (this.props.globalState.tool === GUIEditorTool.ZOOM && !this._hasPerformedDragZoom) {
+            this._panZoomToCenter(1000 * this._zoomModeIncrement, new Vector2(this._scene.pointerX, this._scene.pointerY));
+            this.zooming(1.0 + (this.props.globalState.keys.isKeyDown("alt") ? -this._zoomModeIncrement : this._zoomModeIncrement));
+        }
+        this._hasPerformedDragZoom = false;
         this._mouseStartPoint = null;
+        this._centerZoomMousePosition.set(0, 0);
         this._constraintDirection = ConstraintDirection.NONE;
         this._rootContainer.current?.releasePointerCapture(evt.pointerId);
         this._panning = false;
@@ -841,6 +854,22 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
         }
     }
 
+    private _syncConnectedLines(controlList: Control[], originalToCloneMap: Map<Control, Control>) {
+        for (const control of controlList) {
+            if (control.getClassName() === "Line") {
+                const lineControl = control as Line;
+                if (lineControl.connectedControl) {
+                    const connectedControl = lineControl.connectedControl;
+                    const clonedLine = originalToCloneMap.get(lineControl) as Line;
+                    const clonedConnectedControl = originalToCloneMap.get(connectedControl);
+                    if (clonedLine && clonedConnectedControl) {
+                        clonedLine.connectedControl = clonedConnectedControl;
+                    }
+                }
+            }
+        }
+    }
+
     private _copyLiveGUIToEditorGUI() {
         if (this.props.globalState.liveGuiTexture && this.trueRootContainer) {
             // Create special IDs that will allow us to know which cloned control corresponds to its original
@@ -848,10 +877,14 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
                 control.metadata = { ...(control.metadata ?? {}), editorUniqueId: RandomGUID() };
             });
             this.trueRootContainer.clearControls();
+            const originalToCloneMap = new Map<Control, Control>();
             for (const control of this.props.globalState.liveGuiTexture.rootContainer.children) {
                 const cloned = control.clone(this.props.globalState.guiTexture);
+                originalToCloneMap.set(control, cloned);
                 this.appendBlock(cloned);
             }
+            // Synchronize existing connectedControls
+            this._syncConnectedLines(this.props.globalState.liveGuiTexture.rootContainer.children, originalToCloneMap);
         }
     }
 
@@ -1040,8 +1073,22 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
         } else if (event.detail) {
             delta = -event.detail;
         }
-
+        const mouseCenter = new Vector2(this._scene.pointerX, this._scene.pointerY);
+        this._panZoomToCenter(delta, mouseCenter);
         this.zooming(1 + delta / 1000);
+    }
+
+    private _panZoomToCenter(delta: number, mouseCenter: Vector2) {
+        const mouseToRtt = CoordinateHelper.MousePointerToRTTSpace(this.trueRootContainer, mouseCenter.x, mouseCenter.y);
+        const rttToLocal = CoordinateHelper.RttToLocalNodeSpace(this.trueRootContainer, mouseToRtt.x, mouseToRtt.y);
+
+        const centerToRtt = CoordinateHelper.MousePointerToRTTSpace(this.trueRootContainer, this._engine.getRenderWidth() / 2, this._engine.getRenderHeight() / 2);
+        const centerToLocal = CoordinateHelper.RttToLocalNodeSpace(this.trueRootContainer, centerToRtt.x, centerToRtt.y);
+        const panScale = -delta / 1000;
+
+        const deltaCenter = rttToLocal.subtract(centerToLocal).scale(panScale).multiplyByFloats(1, -1);
+
+        this._panningOffset.addInPlace(deltaCenter);
     }
 
     zoomDrag(event: React.MouseEvent) {
@@ -1049,7 +1096,8 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
         if (event.movementY !== 0) {
             delta = -event.movementY;
         }
-
+        this._hasPerformedDragZoom = true;
+        this._panZoomToCenter(delta, this._centerZoomMousePosition);
         this.zooming(1 + delta / 1000);
     }
 
@@ -1082,7 +1130,7 @@ export class WorkbenchComponent extends React.Component<IWorkbenchComponentProps
             <canvas
                 id="workbench-canvas"
                 onPointerMove={(evt) => {
-                    if (this._mouseDown) {
+                    if (this._mouseDown && this.props.globalState.tool === GUIEditorTool.ZOOM) {
                         this.zoomDrag(evt);
                     }
 

@@ -849,17 +849,18 @@ export class _Exporter {
                 const meshMaterial = (babylonTransformNode as Mesh).material;
                 const convertToLinear = meshMaterial ? meshMaterial.getClassName() === "StandardMaterial" : true;
                 const vertexData: Color3 | Color4 = stride === 3 ? new Color3() : new Color4();
+                const useExactSrgbConversions = this._babylonScene.getEngine().useExactSrgbConversions;
                 for (let k = 0, length = meshAttributeArray.length / stride; k < length; ++k) {
                     index = k * stride;
                     if (stride === 3) {
                         Color3.FromArrayToRef(meshAttributeArray, index, vertexData as Color3);
                         if (convertToLinear) {
-                            (vertexData as Color3).toLinearSpaceToRef(vertexData as Color3);
+                            (vertexData as Color3).toLinearSpaceToRef(vertexData as Color3, useExactSrgbConversions);
                         }
                     } else {
                         Color4.FromArrayToRef(meshAttributeArray, index, vertexData as Color4);
                         if (convertToLinear) {
-                            (vertexData as Color4).toLinearSpaceToRef(vertexData as Color4);
+                            (vertexData as Color4).toLinearSpaceToRef(vertexData as Color4, useExactSrgbConversions);
                         }
                     }
                     vertexAttributes.push(vertexData.asArray());
@@ -1904,6 +1905,15 @@ export class _Exporter {
         this._convertToRightHandedSystem = !babylonScene.useRightHandedSystem;
         this._convertToRightHandedSystemMap = {};
 
+        // Scene metadata
+        if (babylonScene.metadata) {
+            if (this._options.metadataSelector) {
+                scene.extras = this._options.metadataSelector(babylonScene.metadata);
+            } else if (babylonScene.metadata.gltf) {
+                scene.extras = babylonScene.metadata.gltf.extras;
+            }
+        }
+
         // Set default values for all nodes
         babylonScene.rootNodes.forEach((rootNode) => {
             this._convertToRightHandedSystemMap[rootNode.uniqueId] = this._convertToRightHandedSystem;
@@ -2261,40 +2271,42 @@ export class _Exporter {
                 inverseBindMatrices.push(bone.getInvertedAbsoluteTransform());
 
                 const transformNode = bone.getTransformNode();
-                if (transformNode) {
+                if (transformNode && nodeMap[transformNode.uniqueId] !== null && nodeMap[transformNode.uniqueId] !== undefined) {
                     skin.joints.push(nodeMap[transformNode.uniqueId]);
                 } else {
                     Tools.Warn("Exporting a bone without a linked transform node is currently unsupported");
                 }
             }
 
-            // create buffer view for inverse bind matrices
-            const byteStride = 64; // 4 x 4 matrix of 32 bit float
-            const byteLength = inverseBindMatrices.length * byteStride;
-            const bufferViewOffset = binaryWriter.getByteOffset();
-            const bufferView = _GLTFUtilities._CreateBufferView(0, bufferViewOffset, byteLength, undefined, "InverseBindMatrices" + " - " + skeleton.name);
-            this._bufferViews.push(bufferView);
-            const bufferViewIndex = this._bufferViews.length - 1;
-            const bindMatrixAccessor = _GLTFUtilities._CreateAccessor(
-                bufferViewIndex,
-                "InverseBindMatrices" + " - " + skeleton.name,
-                AccessorType.MAT4,
-                AccessorComponentType.FLOAT,
-                inverseBindMatrices.length,
-                null,
-                null,
-                null
-            );
-            const inverseBindAccessorIndex = this._accessors.push(bindMatrixAccessor) - 1;
-            skin.inverseBindMatrices = inverseBindAccessorIndex;
-            this._skins.push(skin);
-            skinMap[skeleton.uniqueId] = this._skins.length - 1;
+            if (skin.joints.length > 0) {
+                // create buffer view for inverse bind matrices
+                const byteStride = 64; // 4 x 4 matrix of 32 bit float
+                const byteLength = inverseBindMatrices.length * byteStride;
+                const bufferViewOffset = binaryWriter.getByteOffset();
+                const bufferView = _GLTFUtilities._CreateBufferView(0, bufferViewOffset, byteLength, undefined, "InverseBindMatrices" + " - " + skeleton.name);
+                this._bufferViews.push(bufferView);
+                const bufferViewIndex = this._bufferViews.length - 1;
+                const bindMatrixAccessor = _GLTFUtilities._CreateAccessor(
+                    bufferViewIndex,
+                    "InverseBindMatrices" + " - " + skeleton.name,
+                    AccessorType.MAT4,
+                    AccessorComponentType.FLOAT,
+                    inverseBindMatrices.length,
+                    null,
+                    null,
+                    null
+                );
+                const inverseBindAccessorIndex = this._accessors.push(bindMatrixAccessor) - 1;
+                skin.inverseBindMatrices = inverseBindAccessorIndex;
+                this._skins.push(skin);
+                skinMap[skeleton.uniqueId] = this._skins.length - 1;
 
-            inverseBindMatrices.forEach((mat) => {
-                mat.m.forEach((cell: number) => {
-                    binaryWriter.setFloat32(cell);
+                inverseBindMatrices.forEach((mat) => {
+                    mat.m.forEach((cell: number) => {
+                        binaryWriter.setFloat32(cell);
+                    });
                 });
-            });
+            }
         }
         return promiseChain.then(() => {
             return skinMap;
@@ -2335,11 +2347,10 @@ export class _BinaryWriter {
      */
     private _resizeBuffer(byteLength: number): ArrayBuffer {
         const newBuffer = new ArrayBuffer(byteLength);
-        const oldUint8Array = new Uint8Array(this._arrayBuffer);
+        const copyOldBufferSize = Math.min(this._arrayBuffer.byteLength, byteLength);
+        const oldUint8Array = new Uint8Array(this._arrayBuffer, 0, copyOldBufferSize);
         const newUint8Array = new Uint8Array(newBuffer);
-        for (let i = 0, length = newUint8Array.byteLength; i < length; ++i) {
-            newUint8Array[i] = oldUint8Array[i];
-        }
+        newUint8Array.set(oldUint8Array, 0);
         this._arrayBuffer = newBuffer;
         this._dataView = new DataView(this._arrayBuffer);
 

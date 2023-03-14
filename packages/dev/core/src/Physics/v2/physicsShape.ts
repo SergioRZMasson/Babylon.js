@@ -1,38 +1,65 @@
 import type { TransformNode } from "../../Meshes/transformNode";
 import type { BoundingBox } from "../../Culling/boundingBox";
 import { ShapeType } from "./IPhysicsEnginePlugin";
-import type { IPhysicsEnginePlugin, PhysicsShapeParameters } from "./IPhysicsEnginePlugin";
+import type { IPhysicsEnginePluginV2, PhysicsShapeParameters } from "./IPhysicsEnginePlugin";
 import type { PhysicsMaterial } from "./physicsMaterial";
 import type { Vector3 } from "../../Maths/math.vector";
 import type { Quaternion } from "../../Maths/math.vector";
-import type { AbstractMesh } from "../../Meshes/abstractMesh";
+import type { Mesh } from "../../Meshes/mesh";
 import type { Scene } from "../../scene";
 
 /**
- *
+ * Options for creating a physics shape
  */
-/** @internal */
-export class PhysicsShape {
-    /** @internal */
-    public _pluginData: any = undefined;
+export interface PhysicShapeOptions {
+    /**
+     * The type of the shape. This can be one of the following: SPHERE, BOX, CAPSULE, CYLINDER, CONVEX_HULL, MESH, HEIGHTFIELD, CONTAINER
+     */
+    type?: ShapeType;
+    /**
+     * The parameters of the shape. Varies depending of the shape type.
+     */
+    parameters?: PhysicsShapeParameters;
+    /**
+     * Reference to an already existing physics shape in the plugin.
+     */
+    pluginData?: any;
+}
 
-    private _physicsPlugin: IPhysicsEnginePlugin;
+/**
+ * PhysicsShape class.
+ * This class is useful for creating a physics shape that can be used in a physics engine.
+ * A Physic Shape determine how collision are computed. It must be attached to a body.
+ */
+export class PhysicsShape {
+    /**
+     * V2 Physics plugin private data for single shape
+     */
+    public _pluginData: any = undefined;
+    /**
+     * The V2 plugin used to create and manage this Physics Body
+     */
+    private _physicsPlugin: IPhysicsEnginePluginV2;
 
     private _type: ShapeType;
 
     /**
+     * Constructs a new physics shape.
+     * @param options The options for the physics shape. These are:
+     *  * type: The type of the shape. This can be one of the following: SPHERE, BOX, CAPSULE, CYLINDER, CONVEX_HULL, MESH, HEIGHTFIELD, CONTAINER
+     *  * parameters: The parameters of the shape.
+     *  * pluginData: The plugin data of the shape. This is used if you already have a reference to the object on the plugin side.
+     * You need to specify either type or pluginData.
+     * @param scene The scene the shape belongs to.
      *
-     * @param type
-     * @param options
-     * @param scene
-     * @returns
+     * This code is useful for creating a new physics shape with the given type, options, and scene.
+     * It also checks that the physics engine and plugin version are correct.
+     * If not, it throws an error. This ensures that the shape is created with the correct parameters and is compatible with the physics engine.
      */
-    constructor(type: number, options: PhysicsShapeParameters = {}, scene: Scene) {
-        this._type = type;
+    constructor(options: PhysicShapeOptions, scene: Scene) {
         if (!scene) {
             return;
         }
-
         const physicsEngine = scene.getPhysicsEngine();
         if (!physicsEngine) {
             throw new Error("No Physics Engine available.");
@@ -44,9 +71,16 @@ export class PhysicsShape {
         if (!physicsPlugin) {
             throw new Error("No Physics Plugin available.");
         }
+        this._physicsPlugin = physicsPlugin as IPhysicsEnginePluginV2;
 
-        this._physicsPlugin = physicsPlugin as IPhysicsEnginePlugin;
-        this._physicsPlugin.initShape(this, type, options);
+        if (options.pluginData !== undefined && options.pluginData !== null) {
+            this._pluginData = options.pluginData;
+            this._type = this._physicsPlugin.getShapeType(this);
+        } else if (options.type !== undefined && options.type !== null) {
+            this._type = options.type;
+            const parameters = options.parameters ?? {};
+            this._physicsPlugin.initShape(this, options.type, parameters);
+        }
     }
 
     /**
@@ -76,8 +110,8 @@ export class PhysicsShape {
      *
      * @param materialId
      */
-    public setMaterial(materialId: PhysicsMaterial): void {
-        this._physicsPlugin.setMaterial(this, materialId);
+    public setMaterial(material: PhysicsMaterial): void {
+        this._physicsPlugin.setMaterial(this, material);
     }
 
     /**
@@ -144,120 +178,106 @@ export class PhysicsShape {
 }
 
 /**
- *
+ * Helper object to create a sphere shape
  */
-/** @internal */
 export class PhysicsShapeSphere extends PhysicsShape {
     /** @internal */
     /**
-     *
-     * @param center
-     * @param radius
-     * @param scene
+     * Constructor for the Sphere Shape
+     * @param center local center of the sphere
+     * @param radius radius
+     * @param scene scene to attach to
      */
     constructor(center: Vector3, radius: number, scene: Scene) {
-        super(ShapeType.BOX, { center: center, radius: radius }, scene);
+        super({ type: ShapeType.SPHERE, parameters: { center: center, radius: radius } }, scene);
     }
 }
 
-/***
- *
+/**
+ * Helper object to create a capsule shape
  */
-/** @internal */
 export class PhysicsShapeCapsule extends PhysicsShape {
-    /** @internal */
     /**
      *
-     * @param pointA
-     * @param pointB
-     * @param radius
-     * @param scene
+     * @param pointA Starting point that defines the capsule segment
+     * @param pointB ending point of that same segment
+     * @param radius radius
+     * @param scene scene to attach to
      */
     constructor(pointA: Vector3, pointB: Vector3, radius: number, scene: Scene) {
-        super(ShapeType.CAPSULE, { pointA: pointA, pointB: pointB, radius: radius }, scene);
+        super({ type: ShapeType.CAPSULE, parameters: { pointA: pointA, pointB: pointB, radius: radius } }, scene);
     }
 }
 
 /**
- *
+ * Helper object to create a cylinder shape
  */
-/** @internal */
 export class PhysicsShapeCylinder extends PhysicsShape {
-    /** @internal */
     /**
      *
-     * @param pointA
-     * @param pointB
-     * @param radius
-     * @param scene
+     * @param pointA Starting point that defines the cylinder segment
+     * @param pointB ending point of that same segment
+     * @param radius radius
+     * @param scene scene to attach to
      */
     constructor(pointA: Vector3, pointB: Vector3, radius: number, scene: Scene) {
-        super(ShapeType.CYLINDER, { pointA: pointA, pointB: pointB, radius: radius }, scene);
+        super({ type: ShapeType.CYLINDER, parameters: { pointA: pointA, pointB: pointB, radius: radius } }, scene);
     }
 }
 
 /**
- *
+ * Helper object to create a box shape
  */
-/** @internal */
-export class PhysicsShapeShapeBox extends PhysicsShape {
-    /** @internal */
+export class PhysicsShapeBox extends PhysicsShape {
     /**
      *
-     * @param center
-     * @param rotation
-     * @param extents
-     * @param scene
+     * @param center local center of the sphere
+     * @param rotation local orientation
+     * @param extents size of the box in each direction
+     * @param scene scene to attach to
      */
     constructor(center: Vector3, rotation: Quaternion, extents: Vector3, scene: Scene) {
-        super(ShapeType.BOX, { center: center, rotation: rotation, extents: extents }, scene);
+        super({ type: ShapeType.BOX, parameters: { center: center, rotation: rotation, extents: extents } }, scene);
     }
 }
 
 /**
- *
+ * Helper object to create a convex hull shape
  */
-/** @internal */
-export class PhysicsShapeShapeConvexHull extends PhysicsShape {
-    /** @internal */
+export class PhysicsShapeConvexHull extends PhysicsShape {
     /**
      *
-     * @param mesh
-     * @param scene
+     * @param mesh the mesh to be used as topology infos for the convex hull
+     * @param scene scene to attach to
      */
-    constructor(mesh: AbstractMesh, scene: Scene) {
-        super(ShapeType.CONVEX_HULL, { mesh: mesh }, scene);
+    constructor(mesh: Mesh, scene: Scene) {
+        super({ type: ShapeType.CONVEX_HULL, parameters: { mesh: mesh } }, scene);
     }
 }
 
 /**
- *
+ * Helper object to create a mesh shape
  */
-/** @internal */
-export class PhysicsShapeShapeMesh extends PhysicsShape {
-    /** @internal */
+export class PhysicsShapeMesh extends PhysicsShape {
     /**
      *
-     * @param mesh
-     * @param scene
+     * @param mesh the mesh topology that will be used to create the shape
+     * @param scene scene to attach to
      */
-    constructor(mesh: AbstractMesh, scene: Scene) {
-        super(ShapeType.MESH, { mesh: mesh }, scene);
+    constructor(mesh: Mesh, scene: Scene) {
+        super({ type: ShapeType.MESH, parameters: { mesh: mesh } }, scene);
     }
 }
 
 /**
- *
+ * A shape container holds a variable number of shapes. Use AddChild to append to newly created parent container.
  */
-/** @internal */
-export class PhysicsShapeShapeContainer extends PhysicsShape {
-    /** @internal */
+export class PhysicsShapeContainer extends PhysicsShape {
     /**
-     *
-     * @param mesh
-     * @param scene
+     * Constructor of the Shape container
+     * @param scene scene to attach to
      */
-    constructor(mesh: AbstractMesh, scene: Scene) {
-        super(ShapeType.CONTAINER, {}, scene);
+    constructor(scene: Scene) {
+        super({ type: ShapeType.CONTAINER, parameters: {} }, scene);
     }
 }

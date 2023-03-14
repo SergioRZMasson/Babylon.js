@@ -46,7 +46,11 @@ vec3 computeViewPosFromUVDepth(vec2 texCoord, float depth) {
     vec4 ndc;
     
     ndc.xy = texCoord * 2.0 - 1.0;
+#ifdef FLUIDRENDERING_RHS
+    ndc.z = -projectionMatrix[2].z + projectionMatrix[3].z / depth;
+#else
     ndc.z = projectionMatrix[2].z + projectionMatrix[3].z / depth;
+#endif
     ndc.w = 1.0;
 
     vec4 eyePos = invProjectionMatrix * ndc;
@@ -56,7 +60,7 @@ vec3 computeViewPosFromUVDepth(vec2 texCoord, float depth) {
 }
 
 vec3 getViewPosFromTexCoord(vec2 texCoord) {
-    float depth = texture2D(depthSampler, texCoord).x;
+    float depth = textureLod(depthSampler, texCoord, 0.).x;
     return computeViewPosFromUVDepth(texCoord, depth);
 }
 
@@ -79,7 +83,7 @@ void main(void) {
     return;
 #endif
 
-    vec2 depthVel = texture2D(depthSampler, texCoord).rg;
+    vec2 depthVel = textureLod(depthSampler, texCoord, 0.).rg;
     float depth = depthVel.r;
 #ifndef FLUIDRENDERING_FIXED_THICKNESS
     float thickness = texture2D(thicknessSampler, texCoord).x;
@@ -118,6 +122,9 @@ void main(void) {
     }
 
     vec3 normal = normalize(cross(ddy, ddx));
+#ifdef FLUIDRENDERING_RHS
+    normal = -normal;
+#endif
 #ifndef WEBGPU
     if(isnan(normal.x) || isnan(normal.y) || isnan(normal.z) || isinf(normal.x) || isinf(normal.y) || isinf(normal.z)) {
         normal = vec3(0., 0., -1.);

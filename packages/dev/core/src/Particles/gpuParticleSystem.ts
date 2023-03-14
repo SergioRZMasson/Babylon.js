@@ -1202,11 +1202,13 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
         }
 
         if (this._platform.isUpdateBufferCreated() && this._cachedUpdateDefines === defines) {
-            return;
+            return true;
         }
 
         this._cachedUpdateDefines = defines;
         this._updateBuffer = this._platform.createUpdateBuffer(defines);
+
+        return this._platform.isUpdateBufferReady();
     }
 
     /**
@@ -1538,11 +1540,13 @@ export class GPUParticleSystem extends BaseParticleSystem implements IDisposable
 
     /** @internal */
     public _update(emitterWM?: Matrix): void {
-        if (!this.emitter) {
+        if (!this.emitter || !this._targetBuffer) {
             return;
         }
 
-        this._recreateUpdateEffect();
+        if (!this._recreateUpdateEffect()) {
+            return;
+        }
 
         if ((<AbstractMesh>this.emitter).position) {
             const emitterMesh = <AbstractMesh>this.emitter;
