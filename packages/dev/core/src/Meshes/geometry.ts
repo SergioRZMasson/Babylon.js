@@ -23,7 +23,7 @@ import type { Mesh } from "../Meshes/mesh";
 import type { Buffer } from "../Buffers/buffer";
 import type { AbstractEngine } from "../Engines/abstractEngine";
 import type { ThinEngine } from "../Engines/thinEngine";
-import { CopyFloatData } from "../Buffers/bufferUtils";
+import { copyFloatData } from "../Buffers/bufferUtils";
 import type { IAssetContainer } from "core/IAssetContainer";
 
 /**
@@ -472,7 +472,7 @@ export class Geometry implements IGetSetVerticesData {
         vertexData[kind] ||= new Float32Array(this._totalVertices * vertexBuffer.getSize());
         const data = vertexBuffer.getData();
         if (data) {
-            CopyFloatData(
+            copyFloatData(
                 data,
                 vertexBuffer.getSize(),
                 vertexBuffer.type,

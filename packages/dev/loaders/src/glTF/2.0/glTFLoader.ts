@@ -1251,7 +1251,7 @@ export class GLTFLoader implements IGLTFLoader {
 
         loadAttribute("POSITION", VertexBuffer.PositionKind, (babylonVertexBuffer, data) => {
             const positions = new Float32Array(data.length);
-            babylonVertexBuffer.forEach(data.length, (value, index) => {
+            babylonVertexBuffer.forEach(positions.length, (value, index) => {
                 positions[index] = data[index] + value;
             });
 
