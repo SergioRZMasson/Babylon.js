@@ -1351,6 +1351,8 @@ export class GLTFExporter {
                 state.setVertexAccessor(vertexBuffer, start, count, accessorIndex);
                 primitive.attributes[getAttributeType(kind)] = accessorIndex;
             }
+        } else {
+            primitive.attributes[getAttributeType(kind)] = accessorIndex;
         }
 
         // TODO: StandardMaterial color spaces
