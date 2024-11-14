@@ -1341,7 +1341,9 @@ export class GLTFExporter {
                     );
                     accessorIndex = this._accessors.length - 1;
                     state.setVertexAccessor(vertexBuffer, start, count, accessorIndex);
-                    primitive.attributes[getAttributeType(kind)] = accessorIndex;
+                } else {
+                    Logger.Error(`Buffer view for float matrix indices not found. Check that the buffer is correctly remapped.`);
+                    return;
                 }
             } else {
                 const bufferViewIndex = state.getVertexBufferView(vertexBuffer._buffer)!;
@@ -1349,11 +1351,10 @@ export class GLTFExporter {
                 this._accessors.push(createAccessor(bufferViewIndex, getAccessorType(kind, state.hasVertexColorAlpha(vertexBuffer)), vertexBuffer.type, count, byteOffset, minMax));
                 accessorIndex = this._accessors.length - 1;
                 state.setVertexAccessor(vertexBuffer, start, count, accessorIndex);
-                primitive.attributes[getAttributeType(kind)] = accessorIndex;
             }
-        } else {
-            primitive.attributes[getAttributeType(kind)] = accessorIndex;
         }
+
+        primitive.attributes[getAttributeType(kind)] = accessorIndex;
 
         // TODO: StandardMaterial color spaces
         // probably have to create new buffer view to store new colors during collectBuffers and figure out if only standardMaterial is using it
