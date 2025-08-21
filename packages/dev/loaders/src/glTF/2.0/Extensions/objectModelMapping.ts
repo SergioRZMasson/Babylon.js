@@ -17,6 +17,8 @@ import type { IInterpolationPropertyInfo, IObjectAccessor } from "core/FlowGraph
 import { GLTFPathToObjectConverter } from "./gltfPathToObjectConverter";
 import type { AnimationGroup } from "core/Animations/animationGroup";
 import type { Mesh } from "core/Meshes/mesh";
+import type { Camera } from "core/Cameras/camera";
+import type { Material } from "core/Materials/material";
 
 export interface IGLTFObjectModelTree {
     cameras: IGLTFObjectModelTreeCamerasObject;
@@ -56,6 +58,7 @@ export interface IGLTFObjectModelTreeNodesObject<GLTFTargetType = INode, Babylon
 }
 
 export interface IGLTFObjectModelTreeCamerasObject {
+    length: IObjectAccessor<ICamera[], (Camera | undefined)[], number>;
     __array__: {
         __target__: boolean;
         orthographic: {
@@ -74,6 +77,7 @@ export interface IGLTFObjectModelTreeCamerasObject {
 }
 
 export interface IGLTFObjectModelTreeMaterialsObject {
+    length: IObjectAccessor<IMaterial[], (Material | undefined)[], number>;
     __array__: {
         __target__: boolean;
         pbrMetallicRoughness: {
@@ -411,6 +415,12 @@ const meshesTree = {
 };
 
 const camerasTree: IGLTFObjectModelTreeCamerasObject = {
+    length: {
+        type: "number",
+        get: (cameras: ICamera[]) => cameras.length,
+        getTarget: (cameras: ICamera[]) => cameras.map((camera) => camera._babylonCamera as Camera),
+        getPropertyName: [() => "length"],
+    },
     __array__: {
         __target__: true,
         orthographic: {
@@ -509,6 +519,12 @@ const camerasTree: IGLTFObjectModelTreeCamerasObject = {
 };
 
 const materialsTree: IGLTFObjectModelTreeMaterialsObject = {
+    length: {
+        type: "number",
+        get: (materials: IMaterial[]) => materials.length,
+        getTarget: (materials: IMaterial[]) => materials.map((material) => (material._data ? material._data[0].babylonMaterial : undefined)),
+        getPropertyName: [() => "length"],
+    },
     __array__: {
         __target__: true,
         emissiveFactor: {
