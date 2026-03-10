@@ -73,9 +73,15 @@ addNewInteractivityFlowGraphMapping("event/onSelect", NAME, {
         serializedObject.config = serializedObject.config || {};
         serializedObject.config.glTF = globalGLTF;
         // find the listener nodeIndex value
-        const nodeIndex = gltfBlock.configuration?.["nodeIndex"]?.value?.[0];
-        if (nodeIndex === undefined || typeof nodeIndex !== "number") {
+        const rawNodeIndex = gltfBlock.configuration?.["nodeIndex"]?.value?.[0];
+        if (rawNodeIndex === undefined) {
             throw new Error("nodeIndex not found in configuration");
+        }
+
+        const nodeIndex = typeof rawNodeIndex === "string" ? parseInt(rawNodeIndex, 10) : rawNodeIndex;
+
+        if (typeof nodeIndex !== "number" || isNaN(nodeIndex)) {
+            throw new Error("nodeIndex is not a valid number");
         }
         const variableName = "pickedMesh_" + nodeIndex;
         // find the nodeIndex value
