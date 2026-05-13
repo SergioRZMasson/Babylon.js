@@ -59,6 +59,12 @@ interface IGLTFToFlowGraphMappingObject {
     defaultValue?: any;
 }
 
+/**
+ * Description of how a KHR_interactivity declaration (op such as
+ * `pointer/get`, `event/onSelect`, `math/add`) maps to one or more
+ * FlowGraph blocks. Used by {@link InteractivityGraphToFlowGraphParser}
+ * to translate the source glTF graph into the serialized FlowGraph form.
+ */
 export interface IGLTFToFlowGraphMapping {
     /**
      * The type of the FlowGraph block(s).
@@ -408,7 +414,16 @@ const gltfToFlowGraphMapping: { [key: string]: IGLTFToFlowGraphMapping } = {
     "math/clamp": getSimpleInputMapping(FlowGraphBlockNames.Clamp, ["a", "b", "c"]),
     "math/saturate": getSimpleInputMapping(FlowGraphBlockNames.Saturate),
     "math/mix": getSimpleInputMapping(FlowGraphBlockNames.MathInterpolation, ["a", "b", "c"]),
+    // Quaternion spherical-linear interpolation. Inputs are two unit
+    // quaternions and an unclamped float coefficient.
+    "math/quatSlerp": getSimpleInputMapping(FlowGraphBlockNames.MathSlerp, ["a", "b", "c"]),
     "math/eq": getSimpleInputMapping(FlowGraphBlockNames.Equality, ["a", "b"]),
+    // Reference equality. The spec defines `ref/eq` as: true if both refs are
+    // null, true if both refer to the same object (regardless of whether it
+    // exists), false otherwise. FlowGraphEqualityBlock falls through to a
+    // strict `===` comparison for non-vector/matrix/numeric types, which
+    // already produces the spec-defined behaviour for Babylon object refs.
+    "ref/eq": getSimpleInputMapping(FlowGraphBlockNames.Equality, ["a", "b"]),
     "math/lt": getSimpleInputMapping(FlowGraphBlockNames.LessThan, ["a", "b"]),
     "math/le": getSimpleInputMapping(FlowGraphBlockNames.LessThanOrEqual, ["a", "b"]),
     "math/gt": getSimpleInputMapping(FlowGraphBlockNames.GreaterThan, ["a", "b"]),
@@ -1104,10 +1119,22 @@ const gltfToFlowGraphMapping: { [key: string]: IGLTFToFlowGraphMapping } = {
             flows: {
                 err: { name: "error" },
             },
+            values: {
+                // New spec renames this output to `lastDelay` (ref). Internally we still produce a
+                // FlowGraphInteger; the index is unique per delay so it acts as the opaque handle.
+                lastDelay: { name: "lastDelayIndex" },
+            },
         },
     },
     "flow/cancelDelay": {
         blocks: [FlowGraphBlockNames.CancelDelay],
+        inputs: {
+            values: {
+                // New spec renames this input to `delay` (ref). The underlying block reads an int
+                // from `delayIndex`; when a ref-string flows in we coerce it via the path converter.
+                delay: { name: "delayIndex" },
+            },
+        },
     },
     "variable/get": {
         blocks: [FlowGraphBlockNames.GetVariable],

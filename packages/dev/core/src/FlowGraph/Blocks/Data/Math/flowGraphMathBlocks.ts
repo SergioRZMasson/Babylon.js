@@ -316,6 +316,29 @@ export class FlowGraphRandomBlock extends FlowGraphConstantOperationBlock<FlowGr
         const max = this.max.getValue(context);
         return this._getRandomValue() * (max - min) + min;
     }
+
+    /**
+     * Override to use per-execution caching that generates a fresh value for each
+     * new signal execution, while returning the same value when read multiple times
+     * within the same execution (required by the KHR_Interactivity spec).
+     * @param context the graph context
+     */
+    public override _updateOutputs(context: FlowGraphContext) {
+        const cachedExecId = context._getExecutionVariable(this, "_randomExecId", -1);
+        if (cachedExecId === context.executionId) {
+            // Same execution — return the cached random value
+            return;
+        }
+        // New execution — generate a fresh random value
+        const calculatedValue = this._doOperation(context);
+        if (calculatedValue === undefined || calculatedValue === null) {
+            this.isValid.setValue(false, context);
+            return;
+        }
+        context._setExecutionVariable(this, "_randomExecId", context.executionId);
+        this.value.setValue(calculatedValue, context);
+        this.isValid.setValue(true, context);
+    }
 }
 RegisterClass(FlowGraphBlockNames.Random, FlowGraphRandomBlock);
 
@@ -709,6 +732,23 @@ export class FlowGraphMathInterpolationBlock extends FlowGraphTernaryOperationBl
 RegisterClass(FlowGraphBlockNames.MathInterpolation, FlowGraphMathInterpolationBlock);
 
 /**
+ * Spherical linear interpolation between two unit quaternions, matching the
+ * KHR_interactivity `math/quatSlerp` operation. The two inputs are treated as
+ * Babylon `Quaternion` values regardless of their concrete class (the spec
+ * defines them as `float4`), and the output is a `Quaternion`.
+ *
+ * The underlying implementation is `Quaternion.Slerp`, whose algorithm matches
+ * the spec step-for-step (dot product, conditional sign-flip on `b`, sin-based
+ * weighting, and a near-identity short-circuit to a linear blend).
+ */
+export class FlowGraphMathSlerpBlock extends FlowGraphTernaryOperationBlock<Quaternion, Quaternion, number, Quaternion> {
+    constructor(config?: IFlowGraphBlockConfiguration) {
+        super(RichTypeAny, RichTypeAny, RichTypeNumber, RichTypeAny, (a, b, c) => Quaternion.Slerp(a, b, c), FlowGraphBlockNames.MathSlerp, config);
+    }
+}
+RegisterClass(FlowGraphBlockNames.MathSlerp, FlowGraphMathSlerpBlock);
+
+/**
  * Equals block.
  */
 export class FlowGraphEqualityBlock extends FlowGraphBinaryOperationBlock<FlowGraphMathOperationType, FlowGraphMathOperationType, boolean> {
@@ -719,14 +759,31 @@ export class FlowGraphEqualityBlock extends FlowGraphBinaryOperationBlock<FlowGr
     private _polymorphicEq(a: FlowGraphMathOperationType, b: FlowGraphMathOperationType) {
         const aClassName = _GetClassNameOf(a);
         const bClassName = _GetClassNameOf(b);
+        if (_AreSameVectorOrQuaternionClass(aClassName, bClassName) || _AreSameMatrixClass(aClassName, bClassName) || _AreSameIntegerClass(aClassName, bClassName)) {
+            return (a as Vector3).equals(b as Vector3);
+        }
+        // Handle mixed number/FlowGraphInteger comparison
+        if (isNumeric(a) && isNumeric(b)) {
+            return getNumericValue(a as FlowGraphNumber) === getNumericValue(b as FlowGraphNumber);
+        }
         if (typeof a !== typeof b) {
             return false;
         }
-        if (_AreSameVectorOrQuaternionClass(aClassName, bClassName) || _AreSameMatrixClass(aClassName, bClassName) || _AreSameIntegerClass(aClassName, bClassName)) {
-            return (a as Vector3).equals(b as Vector3);
-        } else {
-            return a === b;
+        // Both sides are JSON-Pointer-like ref strings ("/foo/0", "/foo/0/", ...).
+        // KHR_interactivity ref/eq is defined as "refers to the same object",
+        // so normalise trailing slashes before comparing — different asset
+        // authors emit refs with and without the trailing slash for the same
+        // object (e.g. /nodes/420 vs /nodes/420/).
+        if (typeof a === "string" && typeof b === "string") {
+            const aStr: string = a;
+            const bStr: string = b;
+            if (aStr.length > 0 && aStr[0] === "/" && bStr.length > 0 && bStr[0] === "/") {
+                const ar = aStr.endsWith("/") ? aStr.slice(0, -1) : aStr;
+                const br = bStr.endsWith("/") ? bStr.slice(0, -1) : bStr;
+                return ar === br;
+            }
         }
+        return a === b;
     }
 }
 RegisterClass(FlowGraphBlockNames.Equality, FlowGraphEqualityBlock);
