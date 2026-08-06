@@ -13,9 +13,26 @@
 import "loaders/glTF/2.0";
 // Register the FBX loader so .fbx files can be loaded via SceneLoader (drag-and-drop and the file picker).
 import "loaders/FBX/fbxFileLoader";
+// Register the USD loader so .usd/.usda/.usdc/.usdz files can be loaded. It converts to glTF in
+// WebAssembly and delegates to the glTF loader registered above, fetching its WebAssembly module
+// on first use.
+import "loaders/USD/usdFileLoader";
+import { USDConverter } from "loaders/USD/usdConverter";
 // Register Scene animation extensions (e.g. getAllAnimatablesByTarget) used by the Inspector's animation panel.
 import "core/Animations/animatable";
 import { Sandbox } from "./sandbox";
+
+// The USD converter's WebAssembly artifacts are not on the Babylon CDN yet, so in dev they
+// are served from the sandbox's own public folder. Remove this block once
+// usd-web-gltf.{js,wasm,data} ship on the CDN alongside the Draco artifacts, at which point
+// USDConverter.DefaultConfiguration resolves correctly on its own.
+if (import.meta.env.DEV) {
+    USDConverter.DefaultConfiguration = {
+        wasmUrl: `${location.origin}/usd/usd-web-gltf.js`,
+        wasmBinaryUrl: `${location.origin}/usd/usd-web-gltf.wasm`,
+        dataUrl: `${location.origin}/usd/usd-web-gltf.data`,
+    };
+}
 
 const HostElement = document.getElementById("host-element") as HTMLElement;
 

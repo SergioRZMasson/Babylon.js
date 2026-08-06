@@ -112,6 +112,7 @@ const abbreviations = [
     "BGR",
     "SFE",
     "BVH",
+    "USD",
 ];
 
 // Join abbreviations into regex string for naming convention rules

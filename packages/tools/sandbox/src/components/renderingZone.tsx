@@ -217,10 +217,11 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
 
             camera = this._scene.activeCamera! as ArcRotateCamera;
 
-            if (this._currentPluginName === "gltf" || this._currentPluginName === "obj" || this._currentPluginName === "fbx") {
+            if (this._currentPluginName === "gltf" || this._currentPluginName === "obj" || this._currentPluginName === "fbx" || this._currentPluginName === "usd") {
                 // glTF assets use a +Z forward convention while the default camera faces +Z. Rotate the camera to look at the front of the asset.
                 // We do this same for obj as it matches other viewers, but obj does not specify a forward convention.
                 // The FBX loader applies the same right-handed-to-left-handed flip as glTF, so its assets share the +Z forward convention.
+                // USD assets are converted to glTF before loading, so they arrive with the glTF convention too.
                 camera.alpha += Math.PI;
             }
 
@@ -285,7 +286,9 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
     }
 
     prepareLighting() {
-        if (this._currentPluginName === "gltf") {
+        // USD assets are converted to glTF before loading, so they arrive as PBR content and
+        // want the same image-based lighting and skybox treatment as glTF.
+        if (this._currentPluginName === "gltf" || this._currentPluginName === "usd") {
             if (!this._scene.environmentTexture) {
                 this._scene.environmentTexture = EnvironmentTools.LoadSkyboxPathTexture(this._scene);
             }

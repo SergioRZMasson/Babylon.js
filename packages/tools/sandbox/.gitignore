@@ -1,0 +1,7 @@
+# Local-only USD converter artifacts.
+#
+# The USD loader fetches usd-web-gltf.{js,wasm,data} from the Babylon CDN. Until those are
+# published there, main.ts points at this folder in dev builds, so the ~12 MB binaries are
+# staged here by hand. They are build outputs of the converter project and must not be
+# committed.
+public/usd/

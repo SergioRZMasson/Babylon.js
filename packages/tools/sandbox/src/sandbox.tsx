@@ -14,13 +14,12 @@ import { CreateScreenshotAsync } from "core/Misc/screenshotTools";
 import { type IScreenshotSize } from "core/Misc/interfaces/screenshotSize";
 import { Color3, Color4 } from "core/Maths/math";
 import { FilesInputStore } from "core/Misc/filesInputStore";
+import { GetRegisteredSceneLoaderPluginMetadata } from "core/Loading/sceneLoader";
 
 import "./scss/main.scss";
 import fullScreenLogo from "./img/logo-fullscreen.svg";
 import { type AbstractEngine } from "core/Engines/abstractEngine";
 import { ImageProcessingConfiguration } from "core/Materials/imageProcessingConfiguration";
-
-declare const BABYLON: typeof import("core/index");
 
 // Types for PWA Launch Queue API (file handlers)
 interface ILaunchParams {
@@ -403,10 +402,13 @@ export class Sandbox extends React.Component<
      * @returns A formatted string of supported extensions like "gltf, glb, obj or babylon"
      */
     private _getSupportedExtensions(): string {
-        const fallbackExtensions = "babylon, babylonproj, gltf, glb, fbx, obj, ply, sog, splat, spz or stl";
+        const fallbackExtensions = "babylon, babylonproj, gltf, glb, fbx, obj, ply, sog, splat, spz, stl, usd, usda, usdc or usdz";
 
         try {
-            const plugins = BABYLON.GetRegisteredSceneLoaderPluginMetadata();
+            // Imported rather than read off the BABYLON global: that global only exists in
+            // production (where the build rewrites core imports onto it), so referencing it
+            // directly threw a ReferenceError in dev and silently fell back to the list above.
+            const plugins = GetRegisteredSceneLoaderPluginMetadata();
             let extensions = plugins.flatMap((plugin) => plugin.extensions.map((ext) => ext.extension.replace(".", "").toLowerCase())).sort();
             extensions = extensions.filter((ext) => ext !== "json"); // The splat loader registers .json, but that is covered by the sog format and json files are too generic
             extensions = [...new Set([...extensions, "babylonproj"])];
@@ -569,7 +571,9 @@ export class Sandbox extends React.Component<
             const extension = file.name.split(".").pop()?.toLowerCase();
 
             // File types that may have external dependencies (textures, .bin files, etc.)
-            const typesWithDependencies = ["gltf", "obj", "babylon"];
+            // .usd/.usda/.usdc reference sibling layers and textures by relative path;
+            // .usdz is a self-contained archive and needs no companion files.
+            const typesWithDependencies = ["gltf", "obj", "babylon", "usd", "usda", "usdc"];
 
             // If file type may have dependencies, show prompt for folder access
             if (extension && typesWithDependencies.includes(extension) && "showDirectoryPicker" in window) {
