@@ -179,13 +179,15 @@ type USDModuleFactory = (options?: Record<string, unknown>) => Promise<IUSDNativ
  */
 export class USDConverter implements IDisposable {
     /**
-     * Default configuration for the USDConverter. Defaults to loading the converter from
-     * the Babylon.js CDN.
+     * Default configuration for the USDConverter. Defaults to the following:
+     * - wasmUrl: `"https://cdn.babylonjs.com/usd/usd-web-gltf.js"`
+     * - wasmBinaryUrl: `"https://cdn.babylonjs.com/usd/usd-web-gltf.wasm"`
+     * - dataUrl: `"https://cdn.babylonjs.com/usd/usd-web-gltf.data"`
      */
     public static DefaultConfiguration: IUSDConverterConfiguration = {
-        wasmUrl: `${Tools._DefaultCdnUrl}/usd-web-gltf.js`,
-        wasmBinaryUrl: `${Tools._DefaultCdnUrl}/usd-web-gltf.wasm`,
-        dataUrl: `${Tools._DefaultCdnUrl}/usd-web-gltf.data`,
+        wasmUrl: `${Tools._DefaultCdnUrl}/usd/usd-web-gltf.js`,
+        wasmBinaryUrl: `${Tools._DefaultCdnUrl}/usd/usd-web-gltf.wasm`,
+        dataUrl: `${Tools._DefaultCdnUrl}/usd/usd-web-gltf.data`,
     };
 
     /**

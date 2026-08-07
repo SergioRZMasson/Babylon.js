@@ -1,7 +1,56 @@
 import { defineConfig } from "vite";
 import path from "path";
+import fs from "fs";
 // @ts-ignore -- untyped JS helper
 import { commonDevViteConfiguration, babylonDevExternalsPlugin } from "../../public/viteToolsHelper.mjs";
+
+// Files the USD converter downloads at runtime, and the content types they must be served
+// with. Emscripten instantiates the wasm by streaming, which requires application/wasm.
+const usdCdnAssets: Record<string, string> = {
+    "usd-web-gltf.js": "text/javascript",
+    "usd-web-gltf.wasm": "application/wasm",
+    "usd-web-gltf.data": "application/octet-stream",
+};
+
+/**
+ * Serves the USD converter's WebAssembly artifacts from the local CDN
+ * (packages/tools/babylonServer/public/usd) during `vite dev`.
+ *
+ * The production sandbox reaches them through Tools.ScriptBaseUrl, which public/index.js
+ * points at either the real CDN or babylonServer. The Vite dev server never runs that
+ * bootstrap, so without this the sandbox would request them from cdn.babylonjs.com. Serving
+ * the babylonServer copy keeps a single source of truth for the ~12 MB binary instead of
+ * staging a second copy under the sandbox's own public folder.
+ */
+function usdLocalCdnPlugin() {
+    const cdnDir = path.resolve(__dirname, "../babylonServer/public/usd");
+
+    return {
+        name: "usd-local-cdn",
+        apply: "serve" as const,
+        configureServer(server: { middlewares: { use: (fn: (req: any, res: any, next: () => void) => void) => void } }) {
+            server.middlewares.use((req, res, next) => {
+                const fileName = req.url?.split("?")[0].replace(/^\/usd\//, "");
+                const contentType = fileName ? usdCdnAssets[fileName] : undefined;
+                if (!req.url?.startsWith("/usd/") || !contentType) {
+                    next();
+                    return;
+                }
+
+                const filePath = path.join(cdnDir, fileName!);
+                if (!fs.existsSync(filePath)) {
+                    res.statusCode = 404;
+                    res.end(`${fileName} is missing from ${cdnDir}.`);
+                    return;
+                }
+
+                res.setHeader("Content-Type", contentType);
+                res.setHeader("Content-Length", fs.statSync(filePath).size);
+                fs.createReadStream(filePath).pipe(res);
+            });
+        },
+    };
+}
 
 const base = commonDevViteConfiguration({
     port: parseInt(process.env.SANDBOX_PORT ?? "1339"),
@@ -36,6 +85,7 @@ export default defineConfig({
     ...base,
     plugins: [
         ...(base.plugins ?? []),
+        usdLocalCdnPlugin(),
         // Rewrite dev-package imports (core/*, gui/*, …) to globalThis.BABYLON accesses
         // during production builds. In dev mode the resolve.alias entries handle resolution;
         // in build mode this plugin (enforce: "pre") rewrites the imports before Rollup

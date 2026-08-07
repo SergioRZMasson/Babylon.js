@@ -204,6 +204,13 @@ export function RegisterUSDFileLoader(): void {
 /**
  * Collects sibling files registered in `FilesInputStore` so a USD scene dropped as a
  * folder can resolve its referenced layers and textures.
+ *
+ * `FilesInputStore` keys carry the path each file had inside the dropped folder, while the
+ * scene loader normally hands the plugin just the root layer's base name. Sibling paths are
+ * therefore rebased so that they sit around the root layer exactly as they did on disk, and a
+ * reference such as `@./textures/wood.png@` lands on the file the author meant instead of
+ * relying on the converter's file-name fallback, which refuses to guess when two folders hold
+ * the same file name.
  * @param rootFileName name of the file being loaded, which is skipped
  * @param explicitFiles files the caller supplied, which take precedence
  * @returns the merged file map, or null when there is nothing to add
@@ -218,12 +225,21 @@ async function ReadFilesInputStoreAsync(rootFileName: string, explicitFiles?: { 
 
     // FilesInputStore keys are lowercased; the root file is already the payload we were
     // handed, so re-adding it would just duplicate it in the virtual filesystem.
-    const rootKey = rootFileName.toLowerCase();
+    const rootKey = rootFileName.toLowerCase().replace(/\\/g, "/");
     const rootBaseName = rootKey.slice(rootKey.lastIndexOf("/") + 1);
+    // Where the converter will place the root layer, which is what its relative references
+    // resolve against.
+    const rootDirectoryInFs = rootKey.slice(0, rootKey.lastIndexOf("/") + 1);
+
+    // Locate the root layer's own entry to learn which folder the scene was rooted at. When
+    // several folders hold a file of that name there is no way to tell which one was loaded,
+    // so paths are left alone and the file-name fallback takes over.
+    const rootMatches = names.map((name) => name.toLowerCase().replace(/\\/g, "/")).filter((key) => key === rootKey || key.slice(key.lastIndexOf("/") + 1) === rootBaseName);
+    const storeDirectory = rootMatches.length === 1 ? rootMatches[0].slice(0, rootMatches[0].lastIndexOf("/") + 1) : "";
 
     const candidates = names.filter((name) => {
-        const key = name.toLowerCase();
-        if (key === rootKey || key === rootBaseName) {
+        const key = name.toLowerCase().replace(/\\/g, "/");
+        if (key === rootKey || key.slice(key.lastIndexOf("/") + 1) === rootBaseName) {
             return false;
         }
         // An explicitly supplied file wins: the caller knows the layout better than we do.
@@ -235,7 +251,12 @@ async function ReadFilesInputStoreAsync(rootFileName: string, explicitFiles?: { 
     const entries = await Promise.all(
         candidates.map(async (name) => {
             try {
-                return { name, data: new Uint8Array(await store[name].arrayBuffer()) };
+                const key = name.toLowerCase().replace(/\\/g, "/");
+                // Move the file from where it sat in the dropped folder to the matching spot
+                // beside the root layer. Files outside the root layer's folder keep their full
+                // path; they are still reachable through the file-name fallback.
+                const path = storeDirectory && key.startsWith(storeDirectory) ? rootDirectoryInFs + key.slice(storeDirectory.length) : name;
+                return { path, data: new Uint8Array(await store[name].arrayBuffer()) };
             } catch {
                 // A file that cannot be read is simply not offered to the resolver; the
                 // conversion then reports it through missingAssets if it was actually needed.
@@ -248,7 +269,7 @@ async function ReadFilesInputStoreAsync(rootFileName: string, explicitFiles?: { 
     let added = 0;
     for (const entry of entries) {
         if (entry) {
-            files[entry.name] = entry.data;
+            files[entry.path] = entry.data;
             added++;
         }
     }

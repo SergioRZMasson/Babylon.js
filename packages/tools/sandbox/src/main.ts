@@ -22,10 +22,10 @@ import { USDConverter } from "loaders/USD/usdConverter";
 import "core/Animations/animatable";
 import { Sandbox } from "./sandbox";
 
-// The USD converter's WebAssembly artifacts are not on the Babylon CDN yet, so in dev they
-// are served from the sandbox's own public folder. Remove this block once
-// usd-web-gltf.{js,wasm,data} ship on the CDN alongside the Draco artifacts, at which point
-// USDConverter.DefaultConfiguration resolves correctly on its own.
+// USDConverter.DefaultConfiguration points at cdn.babylonjs.com. The Vite dev server does not
+// run the CDN bootstrap (public/index.js) that sets Tools.ScriptBaseUrl, so redirect the
+// converter at the copy vite.config.ts serves from the local CDN
+// (packages/tools/babylonServer/public/usd).
 if (import.meta.env.DEV) {
     USDConverter.DefaultConfiguration = {
         wasmUrl: `${location.origin}/usd/usd-web-gltf.js`,

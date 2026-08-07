@@ -52,6 +52,93 @@ function IsProjectAsset(extension: string): boolean {
     return extension.toLowerCase() === "babylonproj";
 }
 
+function IsUsdAsset(extension: string): boolean {
+    switch (extension.toLowerCase()) {
+        case "usd":
+        case "usda":
+        case "usdc":
+        case "usdz": {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Reading every dropped layer to work out which one is the root is only worth it for scenes
+// that comfortably fit in memory. Past this the depth heuristic alone decides.
+const MaxUsdRootScanBytes = 128 * 1024 * 1024;
+
+function GetPathDepth(path: string): number {
+    let depth = 0;
+    for (const character of path) {
+        if (character === "/" || character === "\\") {
+            depth++;
+        }
+    }
+    return depth;
+}
+
+function GetBaseName(path: string): string {
+    return path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+}
+
+/**
+ * Picks the root layer out of the USD files contained in a dropped folder.
+ *
+ * A USD scene is a graph of layers that all share the same extensions, so FilesInput cannot
+ * tell the root apart from the layers it references and simply keeps the last one it saw.
+ * Two signals narrow it down: a layer named inside another layer is by definition not the
+ * root, and root layers sit at or above the layers they pull in.
+ * @param candidates the USD files found in the drop, in the order they were encountered
+ * @returns the file that most likely is the root layer
+ */
+async function SelectUsdRootLayerAsync(candidates: File[]): Promise<File> {
+    if (candidates.length < 2) {
+        return candidates[0];
+    }
+
+    const pathOf = (file: File) => (((file as any).correctName as string | undefined) ?? file.name).toLowerCase();
+    let remaining = candidates;
+
+    const totalBytes = candidates.reduce((total, file) => total + file.size, 0);
+    if (totalBytes <= MaxUsdRootScanBytes) {
+        try {
+            // Asset paths survive as plain text in both the ASCII (.usda) and the crate
+            // (.usdc/.usd) encodings, so a substring search finds references without having to
+            // parse either format. Decoding is lossy for crate binary data, which is harmless
+            // here because only the file names matter.
+            const decoder = new TextDecoder("utf-8", { fatal: false });
+            const contents = await Promise.all(candidates.map(async (file) => decoder.decode(new Uint8Array(await file.arrayBuffer())).toLowerCase()));
+
+            const roots = candidates.filter((candidate, candidateIndex) => {
+                const baseName = GetBaseName(pathOf(candidate));
+                return !contents.some((content, contentIndex) => contentIndex !== candidateIndex && content.includes(baseName));
+            });
+
+            // Every layer referencing every other means the scan told us nothing (or the scene
+            // is circular); keep the full list and let the depth heuristic decide.
+            if (roots.length > 0) {
+                remaining = roots;
+            }
+        } catch {
+            // A file that cannot be read just leaves the depth heuristic in charge.
+        }
+    }
+
+    let best = remaining[0];
+    let bestDepth = GetPathDepth(pathOf(best));
+    for (const candidate of remaining) {
+        const depth = GetPathDepth(pathOf(candidate));
+        if (depth < bestDepth) {
+            best = candidate;
+            bestDepth = depth;
+        }
+    }
+
+    return best;
+}
+
 interface IRenderingZoneProps {
     globalState: GlobalState;
     expanded: boolean;
@@ -67,6 +154,13 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
     private _scene: Scene;
     private _canvas: HTMLCanvasElement;
     private _restoreInspector = false;
+    // USD files seen in the current drop. A folder holds the root layer plus everything it
+    // references, all sharing the same extensions, so the root has to be worked out.
+    private _usdCandidates: File[] = [];
+    // FilesInput hands this setter to onProcessFileCallback. Keeping it lets the root layer be
+    // chosen once the whole drop has been seen, which needs to read files and so cannot happen
+    // inside that synchronous callback.
+    private _setSceneFileToLoad: (sceneFile: File) => void = () => {};
 
     public constructor(props: IRenderingZoneProps) {
         super(props);
@@ -119,6 +213,7 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
             null,
             () => {
                 Tools.ClearLogCache();
+                this._usdCandidates = [];
                 if (this._scene) {
                     if (this.props.globalState.isDebugLayerEnabled) {
                         this.props.globalState.hideDebugLayer();
@@ -126,10 +221,31 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
                     }
                 }
             },
-            () => {
+            (sceneFile) => {
                 // Ensure we stop any existing render loop when reloading, because if there was a previous scene loaded from the URL
                 // the filesInput will not know about it, and so it won't call stopRenderLoop.
                 this._engine.stopRenderLoop();
+
+                const sceneFileName = ((sceneFile as any)?.correctName as string | undefined) ?? sceneFile?.name ?? "";
+                if (this._usdCandidates.length > 1 && IsUsdAsset(GetFileExtension(sceneFileName))) {
+                    // FilesInput keeps the last file whose extension has a loader, which across a
+                    // folder of USD layers is an arbitrary one. Work out the real root first.
+                    void (async () => {
+                        try {
+                            const rootLayer = await SelectUsdRootLayerAsync(this._usdCandidates);
+                            if (rootLayer !== sceneFile) {
+                                this._setSceneFileToLoad(rootLayer);
+                                const rootName = ((rootLayer as any).correctName as string | undefined) ?? rootLayer.name;
+                                Tools.Log(`USD: loading "${rootName}" as the root layer of the ${this._usdCandidates.length} USD files that were dropped.`);
+                            }
+                        } catch {
+                            // Fall back to whatever FilesInput picked.
+                        }
+                        filesInput.reload();
+                    })();
+                    return;
+                }
+
                 filesInput.reload();
             },
             (file, scene, message) => {
@@ -140,6 +256,12 @@ export class RenderingZone extends React.Component<IRenderingZoneProps> {
         );
 
         filesInput.onProcessFileCallback = (file, name, extension, setSceneFileToLoad) => {
+            this._setSceneFileToLoad = setSceneFileToLoad;
+
+            if (extension && IsUsdAsset(extension)) {
+                this._usdCandidates.push(file);
+            }
+
             if (filesInput.filesToLoad && filesInput.filesToLoad.length === 1 && extension) {
                 switch (extension.toLowerCase()) {
                     case "dds":
